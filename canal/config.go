@@ -34,9 +34,9 @@ type Config struct {
 
 	ServerID uint32 `toml:"server_id"`
 	Flavor   string `toml:"flavor"`
-	DataDir  string `toml:"data_dir"`
 
 	Dump DumpConfig `toml:"dump"`
+	Strategy string `toml:"strategy"`
 }
 
 func NewConfigWithFile(name string) (*Config, error) {
@@ -65,13 +65,13 @@ func NewDefaultConfig() *Config {
 	c.Addr = "127.0.0.1:3306"
 	c.User = "root"
 	c.Password = ""
+	c.Strategy = STRATEGY_EVERY_ROW
 
 	rand.Seed(time.Now().Unix())
 	c.ServerID = uint32(rand.Intn(1000)) + 1001
 
 	c.Flavor = "mysql"
 
-	c.DataDir = "./var"
 	c.Dump.ExecutionPath = "mysqldump"
 	c.Dump.DiscardErr = true
 

@@ -9,10 +9,11 @@ import (
 	"github.com/ngaut/log"
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"
+	"sync"
 )
 
 func (c *Canal) startSyncBinlog() error {
-	pos := mysql.Position{c.master.Name, c.master.Position}
+	pos := *c.GetCurrentPosition()
 
 	log.Infof("start sync binlog at %v", pos)
 
@@ -22,7 +23,9 @@ func (c *Canal) startSyncBinlog() error {
 	}
 
 	timeout := time.Second
-	forceSavePos := false
+	//forceSavePos := false
+	xidBuf := NewXidBuffer()
+
 	for {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		ev, err := s.GetEvent(ctx)
@@ -42,7 +45,7 @@ func (c *Canal) startSyncBinlog() error {
 		//next binlog pos
 		pos.Pos = ev.Header.LogPos
 
-		forceSavePos = false
+		//forceSavePos = false
 
 		// We only save position with RotateEvent and XIDEvent.
 		// For RowsEvent, we can't save the position until meeting XIDEvent
@@ -53,29 +56,39 @@ func (c *Canal) startSyncBinlog() error {
 			pos.Name = string(e.NextLogName)
 			pos.Pos = uint32(e.Position)
 			// r.ev <- pos
-			forceSavePos = true
+			//forceSavePos = true
 			log.Infof("rotate binlog to %v", pos)
+			c.UpdatePosition(&pos)
 		case *replication.RowsEvent:
-			// we only focus row based event
-			if err = c.handleRowsEvent(ev); err != nil {
-				log.Errorf("handle rows event error %v", err)
-				return errors.Trace(err)
+			if (c.cfg.Strategy == STRATEGY_EVERY_ROW) {
+				// we only focus row based event
+				if err = c.handleRowsEvent(ev, &pos); err != nil {
+					log.Errorf("handle rows event error %v", err)
+					return errors.Trace(err)
+				}
+			} else if (c.cfg.Strategy == STRATEGY_XID_FLUSH) {
+				xidBuf.Add(ev)
 			}
 			continue
 		case *replication.XIDEvent:
-			// try to save the position later
+			if (c.cfg.Strategy == STRATEGY_XID_FLUSH) {
+				evs := xidBuf.Flush()
+				for _, ev := range(evs) {
+					if err = c.handleRowsEvent(ev, &pos); err != nil {
+						log.Errorf("handle rows event error %v", err)
+						return errors.Trace(err)
+					}
+				}
+			}
 		default:
 			continue
 		}
-
-		c.master.Update(pos.Name, pos.Pos)
-		c.master.Save(forceSavePos)
 	}
 
 	return nil
 }
 
-func (c *Canal) handleRowsEvent(e *replication.BinlogEvent) error {
+func (c *Canal) handleRowsEvent(e *replication.BinlogEvent, position *mysql.Position) error {
 	ev := e.Event.(*replication.RowsEvent)
 
 	// Caveat: table may be altered at runtime.
@@ -97,7 +110,7 @@ func (c *Canal) handleRowsEvent(e *replication.BinlogEvent) error {
 	default:
 		return errors.Errorf("%s not supported now", e.Header.EventType)
 	}
-	events := newRowsEvent(t, action, ev.Rows)
+	events := newRowsEvent(t, action, ev.Rows, position)
 	return c.travelRowsEventHandler(events)
 }
 
@@ -112,7 +125,7 @@ func (c *Canal) WaitUntilPos(pos mysql.Position, timeout int) error {
 		case <-timer.C:
 			return errors.Errorf("wait position %v err", pos)
 		default:
-			curpos := c.master.Pos()
+			curpos := c.GetCurrentPosition()
 			if curpos.Compare(pos) >= 0 {
 				return nil
 			} else {
@@ -124,14 +137,42 @@ func (c *Canal) WaitUntilPos(pos mysql.Position, timeout int) error {
 	return nil
 }
 
-func (c *Canal) CatchMasterPos(timeout int) error {
+func (c *Canal) CatchMasterPos() (*mysql.Position, error)  {
+	var poss *mysql.Position
 	rr, err := c.Execute("SHOW MASTER STATUS")
 	if err != nil {
-		return errors.Trace(err)
+		return poss, errors.Trace(err)
 	}
+	name,_ := rr.GetString(0, 0)
+	pos,_ := rr.GetInt(0, 1)
+	return &mysql.Position{name, uint32(pos)}, err
+}
 
-	name, _ := rr.GetString(0, 0)
-	pos, _ := rr.GetInt(0, 1)
+func NewXidBuffer() *XidBuffer {
+	x := &XidBuffer{}
+	x.RWMutex = new(sync.RWMutex)
+	x.BufferStart = 0
+	x.BufferEnd = 0
+	return x
+}
 
-	return c.WaitUntilPos(mysql.Position{name, uint32(pos)}, timeout)
+type XidBuffer struct {
+	*sync.RWMutex
+	BufferStart uint32
+	BufferEnd uint32
+	Buffer []*replication.BinlogEvent
+}
+
+func (i *XidBuffer) Add(ev *replication.BinlogEvent) {
+	i.Lock()
+	i.Buffer = append(i.Buffer, ev)
+	i.Unlock()
+}
+
+func (i *XidBuffer) Flush() []*replication.BinlogEvent {
+	i.Lock()
+	defer i.Unlock()
+	buf := i.Buffer
+	i.Buffer = []*replication.BinlogEvent{}
+	return buf
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/ngaut/log"
 	"github.com/siddontang/go-mysql/dump"
 	"github.com/siddontang/go-mysql/schema"
+	"github.com/siddontang/go-mysql/mysql"
 )
 
 type dumpParseHandler struct {
@@ -62,7 +63,7 @@ func (h *dumpParseHandler) Data(db string, table string, values []string) error 
 		}
 	}
 
-	events := newRowsEvent(tableInfo, InsertAction, [][]interface{}{vs})
+	events := newRowsEvent(tableInfo, InsertAction, [][]interface{}{vs}, &mysql.Position{"mysqldump", 1})
 	return h.c.travelRowsEventHandler(events)
 }
 
@@ -91,11 +92,6 @@ func (c *Canal) AddDumpIgnoreTables(db string, tables ...string) {
 }
 
 func (c *Canal) tryDump() error {
-	if len(c.master.Name) > 0 && c.master.Position > 0 {
-		// we will sync with binlog name and position
-		log.Infof("skip dump, use last binlog replication pos (%s, %d)", c.master.Name, c.master.Position)
-		return nil
-	}
 
 	if c.dumper == nil {
 		log.Info("skip dump, no mysqldump")
@@ -110,11 +106,7 @@ func (c *Canal) tryDump() error {
 		return errors.Trace(err)
 	}
 
-	log.Infof("dump MySQL and parse OK, use %0.2f seconds, start binlog replication at (%s, %d)",
-		time.Now().Sub(start).Seconds(), h.name, h.pos)
-
-	c.master.Update(h.name, uint32(h.pos))
-	c.master.Save(true)
-
+	log.Infof("dump MySQL and parse OK, use %0.2f seconds, start binlog replication at (%s, %d)", time.Now().Sub(start).Seconds(), h.name, h.pos)
+	c.UpdatePosition(&mysql.Position{h.name, uint32(h.pos)})
 	return nil
 }

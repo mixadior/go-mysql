@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,14 +20,19 @@ import (
 
 var errCanalClosed = errors.New("canal was closed")
 
+const (
+	STRATEGY_XID_FLUSH = "sync_xid_flush"
+	STRATEGY_EVERY_ROW = "sync_every_row"
+)
+
 // Canal can sync your MySQL data into everywhere, like Elasticsearch, Redis, etc...
 // MySQL must open row format for binlog
 type Canal struct {
 	m sync.Mutex
+	posMutex sync.Mutex
 
 	cfg *Config
 
-	master     *masterInfo
 	dumper     *dump.Dumper
 	dumpDoneCh chan struct{}
 	syncer     *replication.BinlogSyncer
@@ -46,6 +50,9 @@ type Canal struct {
 
 	quit   chan struct{}
 	closed sync2.AtomicBool
+
+	CurrentPosition *mysql.Position
+	EventsStrategy string
 }
 
 func NewCanal(cfg *Config) (*Canal, error) {
@@ -54,22 +61,13 @@ func NewCanal(cfg *Config) (*Canal, error) {
 	c.closed.Set(false)
 	c.quit = make(chan struct{})
 
-	os.MkdirAll(cfg.DataDir, 0755)
+	//os.MkdirAll(cfg.DataDir, 0755)
 
 	c.dumpDoneCh = make(chan struct{})
 	c.rsHandlers = make([]RowsEventHandler, 0, 4)
 	c.tables = make(map[string]*schema.Table)
 
 	var err error
-	if c.master, err = loadMasterInfo(c.masterInfoPath()); err != nil {
-		return nil, errors.Trace(err)
-	} else if len(c.master.Addr) != 0 && c.master.Addr != c.cfg.Addr {
-		log.Infof("MySQL addr %s in old master.info, but new %s, reset", c.master.Addr, c.cfg.Addr)
-		// may use another MySQL, reset
-		c.master = &masterInfo{}
-	}
-
-	c.master.Addr = c.cfg.Addr
 
 	if err := c.prepareDumper(); err != nil {
 		return nil, errors.Trace(err)
@@ -129,21 +127,33 @@ func (c *Canal) prepareDumper() error {
 	return nil
 }
 
-func (c *Canal) Start() error {
+func (c *Canal) Start(binLog string, position uint32) error {
 	c.wg.Add(1)
-	go c.run()
+	go c.run(binLog, position)
 
 	return nil
 }
 
-func (c *Canal) run() error {
+func (c *Canal) run(binLog string, position uint32) error {
 	defer c.wg.Done()
 
-	if err := c.tryDump(); err != nil {
-		log.Errorf("canal dump mysql err: %v", err)
-		return errors.Trace(err)
+	if (position == 0) {
+		if err := c.tryDump(); err != nil {
+			log.Errorf("canal dump mysql err: %v", err)
+			return errors.Trace(err)
+		}
+	} else {
+		if (binLog == "master") {
+			poss, err := c.CatchMasterPos()
+			if (err == nil) {
+				c.UpdatePosition(poss)
+			} else {
+				return errors.Trace(err)
+			}
+ 		} else {
+			c.UpdatePosition(&mysql.Position{binLog, position})
+		}
 	}
-
 	close(c.dumpDoneCh)
 
 	if err := c.startSyncBinlog(); err != nil {
@@ -184,7 +194,7 @@ func (c *Canal) Close() {
 		c.syncer = nil
 	}
 
-	c.master.Close()
+	//c.master.Close()
 
 	c.wg.Wait()
 }
@@ -270,10 +280,6 @@ func (c *Canal) prepareSyncer() error {
 	return nil
 }
 
-func (c *Canal) masterInfoPath() string {
-	return path.Join(c.cfg.DataDir, "master.info")
-}
-
 // Execute a SQL
 func (c *Canal) Execute(cmd string, args ...interface{}) (rr *mysql.Result, err error) {
 	c.connLock.Lock()
@@ -302,6 +308,21 @@ func (c *Canal) Execute(cmd string, args ...interface{}) (rr *mysql.Result, err 
 	return
 }
 
-func (c *Canal) SyncedPosition() mysql.Position {
-	return c.master.Pos()
+func (c *Canal) UpdatePosition(pos *mysql.Position) {
+	c.posMutex.Lock()
+	c.CurrentPosition = pos
+	c.posMutex.Unlock()
 }
+
+func (c *Canal) GetCurrentPosition() *mysql.Position {
+	c.posMutex.Lock()
+	pos := c.CurrentPosition
+	c.posMutex.Unlock()
+	return pos
+}
+
+func (c *Canal) SyncedPosition() mysql.Position {
+	return *c.CurrentPosition
+}
+
+

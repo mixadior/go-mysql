@@ -5,6 +5,7 @@ import (
 
 	"github.com/juju/errors"
 	"github.com/siddontang/go-mysql/schema"
+	"github.com/siddontang/go-mysql/mysql"
 )
 
 const (
@@ -22,14 +23,16 @@ type RowsEvent struct {
 	// Two rows for one event, format is [before update row, after update row]
 	// for update v0, only one row for a event, and we don't support this version.
 	Rows [][]interface{}
+	Pos *mysql.Position
 }
 
-func newRowsEvent(table *schema.Table, action string, rows [][]interface{}) *RowsEvent {
+func newRowsEvent(table *schema.Table, action string, rows [][]interface{}, pos *mysql.Position) *RowsEvent {
 	e := new(RowsEvent)
 
 	e.Table = table
 	e.Action = action
 	e.Rows = rows
+	e.Pos = pos
 
 	return e
 }
