@@ -98,6 +98,7 @@ func (c *Canal) tryDump() error {
 		return nil
 	}
 
+
 	h := &dumpParseHandler{c: c}
 
 	start := time.Now()
@@ -105,7 +106,6 @@ func (c *Canal) tryDump() error {
 	if err := c.dumper.DumpAndParse(h); err != nil {
 		return errors.Trace(err)
 	}
-
 	log.Infof("dump MySQL and parse OK, use %0.2f seconds, start binlog replication at (%s, %d)", time.Now().Sub(start).Seconds(), h.name, h.pos)
 	c.UpdatePosition(&mysql.Position{h.name, uint32(h.pos)})
 	return nil

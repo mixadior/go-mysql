@@ -12,6 +12,7 @@ const (
 	UpdateAction = "update"
 	InsertAction = "insert"
 	DeleteAction = "delete"
+	PosAction = "pos"
 )
 
 type RowsEvent struct {

@@ -142,6 +142,8 @@ func (c *Canal) run(binLog string, position uint32) error {
 			log.Errorf("canal dump mysql err: %v", err)
 			return errors.Trace(err)
 		}
+		events := newRowsEvent(&schema.Table{}, PosAction, [][]interface{}{}, c.CurrentPosition)
+		c.travelRowsEventHandler(events)
 	} else {
 		if (binLog == "master") {
 			poss, err := c.CatchMasterPos()
