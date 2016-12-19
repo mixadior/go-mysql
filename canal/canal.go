@@ -128,14 +128,10 @@ func (c *Canal) prepareDumper() error {
 }
 
 func (c *Canal) Start(binLog string, position uint32) error {
-	c.wg.Add(1)
-	go c.run(binLog, position)
-
-	return nil
+	 return c.run(binLog, position)
 }
 
 func (c *Canal) run(binLog string, position uint32) error {
-	defer c.wg.Done()
 
 	if (position == 0) {
 		if err := c.tryDump(); err != nil {

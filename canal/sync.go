@@ -10,6 +10,8 @@ import (
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"
 	"sync"
+	"github.com/siddontang/go-mysql/schema"
+	"fmt"
 )
 
 func (c *Canal) startSyncBinlog() error {
@@ -26,64 +28,70 @@ func (c *Canal) startSyncBinlog() error {
 	//forceSavePos := false
 	xidBuf := NewXidBuffer()
 
-	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		ev, err := s.GetEvent(ctx)
-		cancel()
+	go func() error {
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), 2 * time.Second)
+			ev, err := s.GetEvent(ctx)
+			cancel()
 
-		if err == context.DeadlineExceeded {
-			timeout = 2 * timeout
-			continue
-		}
-
-		if err != nil {
-			return errors.Trace(err)
-		}
-
-		timeout = time.Second
-
-		//next binlog pos
-		pos.Pos = ev.Header.LogPos
-
-		//forceSavePos = false
-
-		// We only save position with RotateEvent and XIDEvent.
-		// For RowsEvent, we can't save the position until meeting XIDEvent
-		// which tells the whole transaction is over.
-		// TODO: If we meet any DDL query, we must save too.
-		switch e := ev.Event.(type) {
-		case *replication.RotateEvent:
-			pos.Name = string(e.NextLogName)
-			pos.Pos = uint32(e.Position)
-			// r.ev <- pos
-			//forceSavePos = true
-			log.Infof("rotate binlog to %v", pos)
-			c.UpdatePosition(&pos)
-		case *replication.RowsEvent:
-			if (c.cfg.Strategy == STRATEGY_EVERY_ROW) {
-				// we only focus row based event
-				if err = c.handleRowsEvent(ev, &pos); err != nil {
-					log.Errorf("handle rows event error %v", err)
-					return errors.Trace(err)
-				}
-			} else if (c.cfg.Strategy == STRATEGY_XID_FLUSH) {
-				xidBuf.Add(ev)
+			if err == context.DeadlineExceeded {
+				timeout = 2 * timeout
+				continue
 			}
-			continue
-		case *replication.XIDEvent:
-			if (c.cfg.Strategy == STRATEGY_XID_FLUSH) {
-				evs := xidBuf.Flush()
-				for _, ev := range(evs) {
+
+			if err != nil {
+				return errors.Trace(err)
+			}
+
+			timeout = time.Second
+
+			//next binlog pos
+			pos.Pos = ev.Header.LogPos
+
+			//forceSavePos = false
+
+			// We only save position with RotateEvent and XIDEvent.
+			// For RowsEvent, we can't save the position until meeting XIDEvent
+			// which tells the whole transaction is over.
+			// TODO: If we meet any DDL query, we must save too.
+			switch e := ev.Event.(type) {
+			case *replication.RotateEvent:
+				fmt.Println(e.Position, e.NextLogName)
+				pos.Name = string(e.NextLogName)
+				pos.Pos = uint32(e.Position)
+
+				log.Infof("rotate binlog to %v", pos)
+				c.UpdatePosition(&mysql.Position{string(e.NextLogName), uint32(e.Position)})
+				evPos := &mysql.Position{string(e.NextLogName), uint32(e.Position)}
+				events := newRowsEvent(&schema.Table{}, PosAction, [][]interface{}{}, evPos)
+				c.travelRowsEventHandler(events)
+
+			case *replication.RowsEvent:
+				if (c.cfg.Strategy == STRATEGY_EVERY_ROW) {
+					// we only focus row based event
 					if err = c.handleRowsEvent(ev, &pos); err != nil {
 						log.Errorf("handle rows event error %v", err)
 						return errors.Trace(err)
 					}
+				} else if (c.cfg.Strategy == STRATEGY_XID_FLUSH) {
+					xidBuf.Add(ev)
 				}
+				continue
+			case *replication.XIDEvent:
+				if (c.cfg.Strategy == STRATEGY_XID_FLUSH) {
+					evs := xidBuf.Flush()
+					for _, ev := range (evs) {
+						if err = c.handleRowsEvent(ev, &pos); err != nil {
+							log.Errorf("handle rows event error %v", err)
+							return errors.Trace(err)
+						}
+					}
+				}
+			default:
+				continue
 			}
-		default:
-			continue
 		}
-	}
+	}();
 
 	return nil
 }
