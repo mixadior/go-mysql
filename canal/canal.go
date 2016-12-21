@@ -127,19 +127,32 @@ func (c *Canal) prepareDumper() error {
 	return nil
 }
 
-func (c *Canal) Start(binLog string, position uint32) error {
-	 return c.run(binLog, position)
+func (c *Canal) Start(binLog string, position uint32, errorChan chan error) error {
+	 go func() {
+		 err := c.run(binLog, position)
+		 //fmt.Println("error")
+		 if (err != nil) {
+			 errorChan <- err
+		 }
+		 return
+	 }();
+	 return nil
 }
 
+
 func (c *Canal) run(binLog string, position uint32) error {
+	c.wg.Add(1)
+	defer c.wg.Done()
 
 	if (position == 0) {
-		if err := c.tryDump(); err != nil {
-			log.Errorf("canal dump mysql err: %v", err)
-			return errors.Trace(err)
-		}
-		events := newRowsEvent(&schema.Table{}, PosAction, [][]interface{}{}, c.CurrentPosition)
-		c.travelRowsEventHandler(events)
+
+			if err := c.tryDump(); err != nil {
+				log.Errorf("canal dump mysql err: %v", err)
+				return errors.Trace(err)
+			}
+			events := newRowsEvent(&schema.Table{}, PosAction, [][]interface{}{}, c.CurrentPosition)
+			c.travelRowsEventHandler(events)
+
 	} else {
 		if (binLog == "master") {
 			poss, err := c.CatchMasterPos()
@@ -160,7 +173,6 @@ func (c *Canal) run(binLog string, position uint32) error {
 		}
 		return errors.Trace(err)
 	}
-
 	return nil
 }
 
@@ -178,14 +190,21 @@ func (c *Canal) Close() {
 		return
 	}
 
+	log.Infof("1")
+
 	c.closed.Set(true)
 
+	log.Infof("2")
 	close(c.quit)
 
+	log.Infof("3")
 	c.connLock.Lock()
+	log.Infof("4")
 	c.conn.Close()
 	c.conn = nil
 	c.connLock.Unlock()
+
+	log.Infof("5")
 
 	if c.syncer != nil {
 		c.syncer.Close()
@@ -193,8 +212,9 @@ func (c *Canal) Close() {
 	}
 
 	//c.master.Close()
-
+	log.Infof("6")
 	c.wg.Wait()
+	log.Infof("7")
 }
 
 func (c *Canal) WaitDumpDone() <-chan struct{} {

@@ -27,9 +27,8 @@ func (c *Canal) startSyncBinlog() error {
 	timeout := time.Second
 	//forceSavePos := false
 	xidBuf := NewXidBuffer()
-	c.wg.Add(1)
-	go func() error {
-		defer c.wg.Done()
+
+
 		for {
 			ctx, cancel := context.WithTimeout(context.Background(), 2 * time.Second)
 			ev, err := s.GetEvent(ctx)
@@ -92,7 +91,7 @@ func (c *Canal) startSyncBinlog() error {
 				continue
 			}
 		}
-	}();
+
 
 	return nil
 }
