@@ -67,14 +67,21 @@ func (c *Canal) startSyncBinlog() error {
 				c.travelRowsEventHandler(events)
 
 			case *replication.RowsEvent:
-				if (c.cfg.Strategy == STRATEGY_EVERY_ROW) {
-					// we only focus row based event
-					if err = c.handleRowsEvent(ev, &pos); err != nil {
-						log.Errorf("handle rows event error %v", err)
-						return errors.Trace(err)
+				tableSchema := string(e.Table.Schema)
+				tableTable := string(e.Table.Table)
+
+				_, affected := c.BinlogTablesIndex[tableSchema + "." + tableTable]
+				//log.Info(c.BinlogTablesIndex, tableSchema + "." + tableTable)
+				if (affected) {
+					if (c.cfg.Strategy == STRATEGY_EVERY_ROW) {
+						// we only focus row based event
+						if err = c.handleRowsEvent(ev, &pos); err != nil {
+							log.Errorf("handle rows event error %v", err)
+							return errors.Trace(err)
+						}
+					} else if (c.cfg.Strategy == STRATEGY_XID_FLUSH) {
+						xidBuf.Add(ev)
 					}
-				} else if (c.cfg.Strategy == STRATEGY_XID_FLUSH) {
-					xidBuf.Add(ev)
 				}
 				continue
 			case *replication.XIDEvent:

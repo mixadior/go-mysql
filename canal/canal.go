@@ -53,6 +53,8 @@ type Canal struct {
 
 	CurrentPosition *mysql.Position
 	EventsStrategy string
+	BinlogTablesIndex map[string]bool
+	BinlogDb string
 }
 
 func NewCanal(cfg *Config) (*Canal, error) {
@@ -67,6 +69,12 @@ func NewCanal(cfg *Config) (*Canal, error) {
 	c.rsHandlers = make([]RowsEventHandler, 0, 4)
 	c.tables = make(map[string]*schema.Table)
 
+	parsedBinlogTables := strings.Split(cfg.BinlogTables, ",")
+	c.BinlogTablesIndex = make(map[string]bool, len(parsedBinlogTables))
+
+	for _,bt := range(parsedBinlogTables) {
+		c.BinlogTablesIndex[cfg.Db + "." + bt] = true
+	}
 	var err error
 
 	if err := c.prepareDumper(); err != nil {
@@ -86,7 +94,7 @@ func NewCanal(cfg *Config) (*Canal, error) {
 
 func (c *Canal) prepareDumper() error {
 	var err error
-	dumpPath := c.cfg.Dump.ExecutionPath
+	dumpPath := c.cfg.MysqlDumpPath
 	if len(dumpPath) == 0 {
 		// ignore mysqldump, use binlog only
 		return nil
@@ -102,23 +110,18 @@ func (c *Canal) prepareDumper() error {
 		return nil
 	}
 
-	dbs := c.cfg.Dump.Databases
-	tables := c.cfg.Dump.Tables
-	tableDB := c.cfg.Dump.TableDB
-
-	if len(tables) == 0 {
-		c.dumper.AddDatabases(dbs...)
-	} else {
-		c.dumper.AddTables(tableDB, tables...)
+	tables := strings.Split(c.cfg.DumpTables, ",")
+	if (len(tables) > 0) {
+		c.dumper.AddTables(c.cfg.Db, tables...)
 	}
 
-	for _, ignoreTable := range c.cfg.Dump.IgnoreTables {
+	/**for _, ignoreTable := range c.cfg.Dump.IgnoreTables {
 		if seps := strings.Split(ignoreTable, ","); len(seps) == 2 {
 			c.dumper.AddIgnoreTables(seps[0], seps[1])
 		}
-	}
+	}*/
 
-	if c.cfg.Dump.DiscardErr {
+	if c.cfg.DiscardDumpError {
 		c.dumper.SetErrOut(ioutil.Discard)
 	} else {
 		c.dumper.SetErrOut(os.Stderr)
@@ -181,7 +184,6 @@ func (c *Canal) isClosed() bool {
 }
 
 func (c *Canal) Close() {
-	log.Infof("close canal")
 
 	c.m.Lock()
 	defer c.m.Unlock()
@@ -189,22 +191,12 @@ func (c *Canal) Close() {
 	if c.isClosed() {
 		return
 	}
-
-	log.Infof("1")
-
 	c.closed.Set(true)
-
-	log.Infof("2")
 	close(c.quit)
-
-	log.Infof("3")
 	c.connLock.Lock()
-	log.Infof("4")
 	c.conn.Close()
 	c.conn = nil
 	c.connLock.Unlock()
-
-	log.Infof("5")
 
 	if c.syncer != nil {
 		c.syncer.Close()
@@ -212,9 +204,7 @@ func (c *Canal) Close() {
 	}
 
 	//c.master.Close()
-	log.Infof("6")
 	c.wg.Wait()
-	log.Infof("7")
 }
 
 func (c *Canal) WaitDumpDone() <-chan struct{} {

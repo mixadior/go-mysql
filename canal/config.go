@@ -35,8 +35,12 @@ type Config struct {
 	ServerID uint32 `toml:"server_id"`
 	Flavor   string `toml:"flavor"`
 
-	Dump DumpConfig `toml:"dump"`
 	Strategy string `toml:"strategy"`
+	DumpTables string `toml:"dump_tables"`
+	BinlogTables string `toml:"binlog_tables"`
+	MysqlDumpPath string `toml:"mysqldump_path"`
+	Db string
+	DiscardDumpError bool
 }
 
 func NewConfigWithFile(name string) (*Config, error) {
@@ -71,9 +75,11 @@ func NewDefaultConfig() *Config {
 	c.ServerID = uint32(rand.Intn(1000)) + 1001
 
 	c.Flavor = "mysql"
+	c.MysqlDumpPath = "mysqldump"
+	c.DiscardDumpError = true
 
-	c.Dump.ExecutionPath = "mysqldump"
-	c.Dump.DiscardErr = true
+	//c.Dump.ExecutionPath = "mysqldump"
+	//c.Dump.DiscardErr = true
 
 	return c
 }
