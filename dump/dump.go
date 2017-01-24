@@ -24,6 +24,7 @@ type Dumper struct {
 	TableDB string
 
 	Databases []string
+	Where string
 
 	IgnoreTables map[string][]string
 
@@ -60,6 +61,10 @@ func (d *Dumper) SetErrOut(o io.Writer) {
 
 func (d *Dumper) AddDatabases(dbs ...string) {
 	d.Databases = append(d.Databases, dbs...)
+}
+
+func (d *Dumper) SetWhere(where string) {
+	d.Where = where;
 }
 
 func (d *Dumper) AddTables(db string, tables ...string) {
@@ -116,6 +121,10 @@ func (d *Dumper) Dump(w io.Writer) error {
 		for _, table := range tables {
 			args = append(args, fmt.Sprintf("--ignore-table=%s.%s", db, table))
 		}
+	}
+
+	if (len(d.Where) > 0) {
+		args = append(args, fmt.Sprintf("--where=%s", d.Where))
 	}
 
 	if len(d.Tables) == 0 && len(d.Databases) == 0 {

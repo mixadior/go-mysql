@@ -11,7 +11,7 @@ import (
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
 	"github.com/siddontang/go-mysql/client"
-	"github.com/siddontang/go-mysql/dump"
+	"github.com/mixadior/go-mysql/dump"
 	"github.com/siddontang/go-mysql/mysql"
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
@@ -108,6 +108,10 @@ func (c *Canal) prepareDumper() error {
 	if c.dumper == nil {
 		//no mysqldump, use binlog only
 		return nil
+	}
+
+	if (len(c.cfg.MysqlDumpWhere) > 0) {
+		c.dumper.SetWhere(c.cfg.MysqlDumpWhere)
 	}
 
 	tables := strings.Split(c.cfg.DumpTables, ",")

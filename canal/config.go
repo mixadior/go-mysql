@@ -39,6 +39,7 @@ type Config struct {
 	DumpTables string `toml:"dump_tables"`
 	BinlogTables string `toml:"binlog_tables"`
 	MysqlDumpPath string `toml:"mysqldump_path"`
+	MysqlDumpWhere string
 	Db string
 	DiscardDumpError bool
 }
