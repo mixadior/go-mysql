@@ -3,10 +3,9 @@ package canal
 import (
 	"strconv"
 	"time"
-
 	"github.com/juju/errors"
 	"github.com/ngaut/log"
-	"github.com/siddontang/go-mysql/dump"
+	"github.com/mixadior/go-mysql/dump"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/siddontang/go-mysql/mysql"
 )
@@ -24,6 +23,7 @@ func (h *dumpParseHandler) BinLog(name string, pos uint64) error {
 }
 
 func (h *dumpParseHandler) Data(db string, table string, values []string) error {
+	//log.Info("Data")
 	if h.c.isClosed() {
 		return errCanalClosed
 	}
@@ -94,6 +94,7 @@ func (c *Canal) AddDumpIgnoreTables(db string, tables ...string) {
 func (c *Canal) tryDump() error {
 
 	if c.dumper == nil {
+		//fmt.Println("dump3")
 		log.Info("skip dump, no mysqldump")
 		return nil
 	}

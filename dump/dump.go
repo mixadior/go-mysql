@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/juju/errors"
+    "github.com/siddontang/go/log"
 )
 
 // Unlick mysqldump, Dumper is designed for parsing and syning data easily.
@@ -142,7 +143,10 @@ func (d *Dumper) Dump(w io.Writer) error {
 		w.Write([]byte(fmt.Sprintf("USE `%s`;\n", d.TableDB)))
 	}
 
+    //fmt.Println(strings.Join(args, " "));
 	cmd := exec.Command(d.ExecutionPath, args...)
+
+    log.Info(d.ExecutionPath, strings.Join(args, " "))
 
 	cmd.Stderr = d.ErrOut
 	cmd.Stdout = w

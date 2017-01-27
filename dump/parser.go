@@ -42,6 +42,7 @@ func Parse(r io.Reader, h ParseHandler) error {
 
 	for {
 		line, err := rb.ReadString('\n')
+		//fmt.Println(line, err);
 		if err != nil && err != io.EOF {
 			return errors.Trace(err)
 		} else if mysql.ErrorEqual(err, io.EOF) {

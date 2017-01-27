@@ -152,7 +152,6 @@ func (c *Canal) run(binLog string, position uint32) error {
 	defer c.wg.Done()
 
 	if (position == 0) {
-
 			if err := c.tryDump(); err != nil {
 				log.Errorf("canal dump mysql err: %v", err)
 				return errors.Trace(err)

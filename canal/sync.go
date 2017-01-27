@@ -11,7 +11,7 @@ import (
 	"github.com/siddontang/go-mysql/replication"
 	"sync"
 	"github.com/siddontang/go-mysql/schema"
-	"fmt"
+	//"fmt"
 )
 
 func (c *Canal) startSyncBinlog() error {
@@ -56,7 +56,7 @@ func (c *Canal) startSyncBinlog() error {
 			// TODO: If we meet any DDL query, we must save too.
 			switch e := ev.Event.(type) {
 			case *replication.RotateEvent:
-				fmt.Println(e.Position, e.NextLogName)
+				//fmt.Println(e.Position, e.NextLogName)
 				pos.Name = string(e.NextLogName)
 				pos.Pos = uint32(e.Position)
 
