@@ -8,6 +8,7 @@ import (
 	"github.com/mixadior/go-mysql/dump"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/siddontang/go-mysql/mysql"
+	//"fmt"
 )
 
 type dumpParseHandler struct {

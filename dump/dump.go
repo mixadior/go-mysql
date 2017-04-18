@@ -9,6 +9,8 @@ import (
 
 	"github.com/juju/errors"
     "github.com/siddontang/go/log"
+	"time"
+	"github.com/inconshreveable/log15"
 )
 
 // Unlick mysqldump, Dumper is designed for parsing and syning data easily.
@@ -30,9 +32,14 @@ type Dumper struct {
 	IgnoreTables map[string][]string
 
 	ErrOut io.Writer
+
+	Telemetry1 int64
+	Telemetry2 int64
+
+	Logger log15.Logger
 }
 
-func NewDumper(executionPath string, addr string, user string, password string) (*Dumper, error) {
+func NewDumper(executionPath string, addr string, user string, password string, logger log15.Logger) (*Dumper, error) {
 	if len(executionPath) == 0 {
 		return nil, nil
 	}
@@ -50,8 +57,11 @@ func NewDumper(executionPath string, addr string, user string, password string) 
 	d.Tables = make([]string, 0, 16)
 	d.Databases = make([]string, 0, 16)
 	d.IgnoreTables = make(map[string][]string)
+	d.Telemetry1 = 0
+	d.Telemetry2 = 0
 
 	d.ErrOut = os.Stderr
+	d.Logger = logger
 
 	return d, nil
 }
@@ -151,7 +161,11 @@ func (d *Dumper) Dump(w io.Writer) error {
 	cmd.Stderr = d.ErrOut
 	cmd.Stdout = w
 
-	return cmd.Run()
+	err := cmd.Run()
+	if (err != nil) {
+		fmt.Println("mysqldump command error", err)
+	}
+	return err
 }
 
 // Dump MySQL and parse immediately
@@ -159,16 +173,31 @@ func (d *Dumper) DumpAndParse(h ParseHandler) error {
 	r, w := io.Pipe()
 
 	done := make(chan error, 1)
+	ticker := time.NewTicker(time.Second * 5);
 	go func() {
-		err := Parse(r, h)
+		for _ = range ticker.C {
+			d.Logger.Info("Telemetry", "Parsed rows", d.Telemetry1);
+			//fmt.Println("Telemetry: ", d.Telemetry1)
+			d.Telemetry1 = 0
+		}
+	}()
+	go func() {
+		err := Parse(r, h, &d.Telemetry1)
+		if (err != nil) {
+			fmt.Println("parser error", err)
+		}
 		r.CloseWithError(err)
 		done <- err
 	}()
 
 	err := d.Dump(w)
+	if (err != nil) {
+		fmt.Println("dumper error", err)
+	}
 	w.CloseWithError(err)
 
 	err = <-done
+	ticker.Stop()
 
 	return errors.Trace(err)
 }

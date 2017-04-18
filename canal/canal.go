@@ -16,6 +16,7 @@ import (
 	"github.com/siddontang/go-mysql/replication"
 	"github.com/siddontang/go-mysql/schema"
 	"github.com/siddontang/go/sync2"
+	"github.com/inconshreveable/log15"
 )
 
 var errCanalClosed = errors.New("canal was closed")
@@ -55,13 +56,15 @@ type Canal struct {
 	EventsStrategy string
 	BinlogTablesIndex map[string]bool
 	BinlogDb string
+	Logger log15.Logger
 }
 
-func NewCanal(cfg *Config) (*Canal, error) {
+func NewCanal(cfg *Config, logger log15.Logger) (*Canal, error) {
 	c := new(Canal)
 	c.cfg = cfg
 	c.closed.Set(false)
 	c.quit = make(chan struct{})
+	c.Logger = logger
 
 	//os.MkdirAll(cfg.DataDir, 0755)
 
@@ -101,7 +104,7 @@ func (c *Canal) prepareDumper() error {
 	}
 
 	if c.dumper, err = dump.NewDumper(dumpPath,
-		c.cfg.Addr, c.cfg.User, c.cfg.Password); err != nil {
+		c.cfg.Addr, c.cfg.User, c.cfg.Password, c.Logger); err != nil {
 		return errors.Trace(err)
 	}
 

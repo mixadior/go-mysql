@@ -9,6 +9,7 @@ import (
 
 	"github.com/juju/errors"
 	"github.com/siddontang/go-mysql/mysql"
+	"sync/atomic"
 )
 
 var (
@@ -34,7 +35,7 @@ func init() {
 
 // Parse the dump data with Dumper generate.
 // It can not parse all the data formats with mysqldump outputs
-func Parse(r io.Reader, h ParseHandler) error {
+func Parse(r io.Reader, h ParseHandler, telemetry ... *int64) error {
 	rb := bufio.NewReaderSize(r, 1024*16)
 
 	var db string
@@ -83,8 +84,8 @@ func Parse(r io.Reader, h ParseHandler) error {
 				return errors.Trace(err)
 			}
 		}
+		atomic.AddInt64(telemetry[0], 1)
 	}
-
 	return nil
 }
 
