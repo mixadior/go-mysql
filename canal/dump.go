@@ -95,8 +95,7 @@ func (c *Canal) AddDumpIgnoreTables(db string, tables ...string) {
 func (c *Canal) tryDump() error {
 
 	if c.dumper == nil {
-		//fmt.Println("dump3")
-		log.Info("skip dump, no mysqldump")
+		c.Logger.Error("Skip dump cannot locate mysqldump.", "Path", c.dumper.ExecutionPath)
 		return nil
 	}
 
@@ -104,11 +103,12 @@ func (c *Canal) tryDump() error {
 	h := &dumpParseHandler{c: c}
 
 	start := time.Now()
-	log.Info("try dump MySQL and parse")
+	c.Logger.Info("Try dump MySQL and parse");
 	if err := c.dumper.DumpAndParse(h); err != nil {
 		return errors.Trace(err)
 	}
-	log.Infof("dump MySQL and parse OK, use %0.2f seconds, start binlog replication at (%s, %d)", time.Now().Sub(start).Seconds(), h.name, h.pos)
+	c.Logger.Info("Dump MySQL and parse OK", "Seconds", time.Now().Sub(start).Seconds())
+	c.Logger.Info("Start binlog replication", "PosName", h.name, "PosPos", h.pos)
 	c.UpdatePosition(&mysql.Position{h.name, uint32(h.pos)})
 	return nil
 }
