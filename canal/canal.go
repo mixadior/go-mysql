@@ -239,6 +239,16 @@ func (c *Canal) GetTable(db string, table string) (*schema.Table, error) {
 	return t, nil
 }
 
+func (c *Canal) DropTableCache(db string, table string) {
+	key := fmt.Sprintf("%s.%s", db, table)
+	c.tableLock.Lock()
+	_, ok := c.tables[key]
+	if ok {
+		delete(c.tables, key)
+	}
+	c.tableLock.Unlock()
+}
+
 // Check MySQL binlog row image, must be in FULL, MINIMAL, NOBLOB
 func (c *Canal) CheckBinlogRowImage(image string) error {
 	// need to check MySQL binlog row image? full, minimal or noblob?
@@ -289,7 +299,7 @@ func (c *Canal) prepareSyncer() error {
 		Password: c.cfg.Password,
 	}
 
-	c.syncer = replication.NewBinlogSyncer(&cfg)
+	c.syncer = replication.NewBinlogSyncer(cfg)
 
 	return nil
 }
